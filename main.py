@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from database import engine
 import models
+from routers import items
 
 models.Base.metadata.create_all(bind=engine)
 
@@ -21,3 +22,4 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 @app.get("/")
 def root():
     return {"message": "서버 정상 작동 중"}
+app.include_router(items.router)
