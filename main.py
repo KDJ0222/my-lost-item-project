@@ -1,6 +1,10 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from database import engine
+import models
+
+models.Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="캠퍼스 분실물 서비스")
 
