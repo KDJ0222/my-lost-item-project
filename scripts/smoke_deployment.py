@@ -60,6 +60,10 @@ def main():
         assert error.code == 401
     assert b"/assets/js/app.js" in request("/")
     assert b"function App" in request("/assets/js/app.js")
+    assert b"CampusMap" in request("/assets/js/campus-map.js")
+    assert b"Leaflet" in request("/assets/vendor/leaflet/leaflet.js")
+    assert b"leaflet-container" in request("/assets/vendor/leaflet/leaflet.css")
+    assert request("/assets/vendor/leaflet/images/marker-icon.png").startswith(b"\x89PNG")
     if args.save_state:
         if args.save_state.exists():
             parser.error("Choose a new state filename.")
@@ -70,9 +74,11 @@ def main():
         upload = json.loads(request("/api/images", method="POST", data=body, content_type="multipart/form-data; boundary=" + boundary))
         payload = {"title":"deployment-check-" + secrets.token_hex(8), "category":"검증용",
                    "location":"학생회관 시연용", "author":"배포 검증", "contact":"check@example.com",
-                   "keywords":["deployment-check"], "image_path":upload["image_path"]}
+                   "keywords":["deployment-check"], "image_path":upload["image_path"],
+                   "latitude":37.4966, "longitude":126.9544}
         item = json.loads(request("/api/items", method="POST", data=json.dumps(payload).encode(), content_type="application/json", owner=owner))
-        state = {"id":item["id"], "title":item["title"], "image_path":item["image_path"], "owner":owner}
+        state = {"id":item["id"], "title":item["title"], "image_path":item["image_path"], "owner":owner,
+                 "latitude":item["latitude"], "longitude":item["longitude"]}
         args.save_state.parent.mkdir(parents=True, exist_ok=True)
         with args.save_state.open("x", encoding="utf-8") as output:
             json.dump(state, output)
@@ -82,6 +88,7 @@ def main():
         item = json.loads(request(f"/api/items/{state['id']}", owner=state["owner"]))
         assert item["title"] == state["title"] and item["title"].startswith("deployment-check-")
         assert item["image_path"] == state["image_path"] and item["is_mine"] is True
+        assert item["latitude"] == state["latitude"] and item["longitude"] == state["longitude"]
         assert request(item["image_path"]) == sample_png()
         if args.cleanup:
             request(f"/api/items/{state['id']}", method="DELETE", owner=state["owner"])

@@ -65,3 +65,25 @@ test('creating a new report starts open without inherited coordinates', () => {
   assert.equal(result.longitude, null);
   assert.deepEqual(result.keywords, ['파랑','접이식']);
 });
+
+test('new map selection is included in the report request without changing location text', () => {
+  const fields = context.initialReportFields();
+  Object.assign(fields, {latitude:37.4966, longitude:126.9544, place:'2층 휴게 공간'});
+  const result = context.reportPayload(fields, null, '발견');
+  assert.equal(result.latitude, 37.4966);
+  assert.equal(result.longitude, 126.9544);
+  assert.equal(result.location, '학생회관 2층 휴게 공간');
+});
+
+test('editing a map point replaces both coordinates and clearing it does not restore the original', () => {
+  const fields = context.initialReportFields(original);
+  fields.latitude = 37.496; fields.longitude = 126.955;
+  const moved = context.reportPayload(fields, original.image_path, '발견', original);
+  assert.equal(moved.latitude, fields.latitude);
+  assert.equal(moved.longitude, fields.longitude);
+  fields.latitude = null; fields.longitude = null;
+  const cleared = context.reportPayload(fields, original.image_path, '발견', original);
+  assert.equal(cleared.latitude, null);
+  assert.equal(cleared.longitude, null);
+  assert.equal(cleared.location, original.location);
+});
