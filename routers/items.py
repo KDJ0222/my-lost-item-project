@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from database import get_db
 from models import Item
-from schemas import ItemCreate, ItemRead
+from schemas import ItemCreate, ItemRead, ItemStatusUpdate
 from services.gemini import analyze_image
 from services.images import read_image, save_image, validate_image_path
 from services.ownership import OwnerToken, item_response, require_owner, token_hash
@@ -96,6 +96,8 @@ def report_item(
     owner_token: OwnerToken = None,
     db: Session = Depends(get_db),
 ):
+    if request.app.state.production and not owner_token:
+        raise HTTPException(401, "등록하려면 브라우저 식별 정보가 필요합니다.")
     # Validate whitespace and coordinate pairs before sending a paid AI request.
     try:
         fields = ItemCreate(
@@ -141,6 +143,8 @@ def get_item(item_id: int, owner_token: OwnerToken = None, db: Session = Depends
 
 @router.post("", response_model=ItemRead, status_code=201)
 def create_item(data: ItemCreate, request: Request, owner_token: OwnerToken = None, db: Session = Depends(get_db)):
+    if request.app.state.production and not owner_token:
+        raise HTTPException(401, "등록하려면 브라우저 식별 정보가 필요합니다.")
     validate_image_path(data.image_path, request.app.state.upload_dir)
     item = Item(**data.model_dump(), owner_token_hash=token_hash(owner_token))
 
@@ -164,7 +168,7 @@ def update_item(
     if item is None:
         raise HTTPException(status_code=404, detail="물품을 찾을 수 없습니다.")
 
-    if item.owner_token_hash:
+    if item.owner_token_hash or request.app.state.production:
         require_owner(item, owner_token)
     validate_image_path(data.image_path, request.app.state.upload_dir)
     for name, value in data.model_dump().items():
@@ -173,6 +177,24 @@ def update_item(
     db.commit()
     db.refresh(item)
 
+    return item_response(item, owner_token)
+
+
+@router.patch("/{item_id}/status", response_model=ItemRead)
+def update_status(
+    item_id: int,
+    data: ItemStatusUpdate,
+    owner_token: OwnerToken = None,
+    db: Session = Depends(get_db),
+):
+    item = db.get(Item, item_id)
+    if item is None:
+        raise HTTPException(404, "물품을 찾을 수 없습니다.")
+    require_owner(item, owner_token)
+    # Change only status so a concurrent content edit is not overwritten.
+    item.status = data.status
+    db.commit()
+    db.refresh(item)
     return item_response(item, owner_token)
 
 

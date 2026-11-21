@@ -1,0 +1,77 @@
+name: Deployment readiness
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          package-manager-cache: false
+      - run: python -m pip install -r requirements-dev.txt -c requirements-production.txt
+      - run: python -m pytest -q
+      - run: node --test tests/test_ui_logic.cjs
+
+  docker:
+    needs: tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      APP_ACCESS_USERNAME: campus
+      APP_ACCESS_PASSWORD: ci-only-disposable-password
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+      - name: Build without local credentials or data
+        run: docker build --tag campus-find:ci .
+      - name: Start with persistent volume
+        run: |
+          docker volume create campus-ci-data
+          docker run -d --name campus-ci -p 127.0.0.1:8000:8000 \
+            -v campus-ci-data:/data -e GEMINI_API_KEY=ci-only-placeholder-key \
+            -e ALLOWED_HOSTS=localhost,127.0.0.1 \
+            -e APP_ACCESS_USERNAME -e APP_ACCESS_PASSWORD campus-find:ci
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:8000/api/health; then exit 0; fi
+            sleep 1
+          done
+          docker logs campus-ci
+          exit 1
+      - name: Create disposable report and photo
+        run: python -m scripts.smoke_deployment --save-state "$RUNNER_TEMP/campus-smoke.json"
+      - name: Restart the same container
+        run: |
+          docker restart campus-ci
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:8000/api/health; then exit 0; fi
+            sleep 1
+          done
+          docker logs campus-ci
+          exit 1
+      - name: Verify database and photo survive restart
+        run: python -m scripts.smoke_deployment --verify-state "$RUNNER_TEMP/campus-smoke.json" --cleanup
+      - name: Clean up disposable CI resources
+        if: always()
+        run: |
+          docker logs campus-ci || true
+          docker rm -f campus-ci || true
+          docker volume rm campus-ci-data || true

@@ -2,10 +2,12 @@
 .env
 .env.*
 !.env.example
+!.env.production.example
 
 # Python 가상환경
 .venv/
 .venv313/
+.venv*/
 venv/
 
 # Python 자동 생성 파일
@@ -24,3 +26,9 @@ static/uploads/
 
 # 테스트 캐시
 .pytest_cache/
+
+# 로컬 공유 도구와 임시 산출물
+.tools/
+tmp/
+data/
+backups/

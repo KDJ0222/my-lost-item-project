@@ -79,3 +79,9 @@ class ImageUploadResponse(BaseModel):
 
 class ImageAnalysisResponse(ImageAnalysis):
     image_path: str
+
+
+class ItemStatusUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    status: Literal["open", "resolved"]

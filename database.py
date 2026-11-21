@@ -1,4 +1,5 @@
 from fastapi import Request
+from pathlib import Path
 from sqlalchemy import create_engine, event, inspect, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
@@ -6,16 +7,19 @@ from sqlalchemy.orm import DeclarativeBase, sessionmaker
 from config import get_settings
 
 DATABASE_URL = get_settings().database_url
-engine = create_engine(
-    DATABASE_URL,
-    connect_args={"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {},
-)
+def make_engine(url: str) -> Engine:
+    db_engine = create_engine(
+        url, connect_args={"check_same_thread": False, "timeout":30} if url.startswith("sqlite") else {},
+    )
+    if db_engine.dialect.name == "sqlite":
+        @event.listens_for(db_engine, "connect")
+        def configure_sqlite(connection, _):
+            connection.execute("PRAGMA foreign_keys=ON")
+            connection.execute("PRAGMA busy_timeout=30000")
+    return db_engine
 
 
-@event.listens_for(engine, "connect")
-def configure_sqlite(connection, _):
-    if engine.dialect.name == "sqlite":
-        connection.execute("PRAGMA foreign_keys=ON")
+engine = make_engine(DATABASE_URL)
 
 
 SessionLocal = sessionmaker(
@@ -33,6 +37,8 @@ def initialize_database(db_engine: Engine = engine):
     """Create tables and preserve rows in the original SQLite schema."""
     import models  # noqa: F401 -- register tables before create_all
 
+    if db_engine.dialect.name == "sqlite" and db_engine.url.database not in (None, "", ":memory:"):
+        Path(db_engine.url.database).resolve().parent.mkdir(parents=True, exist_ok=True)
     Base.metadata.create_all(bind=db_engine)
     if db_engine.dialect.name == "sqlite":
         with db_engine.begin() as connection:
